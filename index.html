@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>system_init.sh</title>
+  <style>
+    :root {
+      --bg: #090c10;
+      --card-bg: #131720;
+      --border: #2d3548;
+      --text: #d2dff0;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --magenta: #ff0055;
+      --cyan: #00f0ff;
+      --glow: rgba(88, 166, 255, 0.3);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Courier New', Courier, monospace;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* CRT Scanlines and Flickering Layer */
+    body::before {
+      content: " ";
+      display: block;
+      position: absolute;
+      top: 0; left: 0; bottom: 0; right: 0;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.35) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.04), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.04));
+      z-index: 20;
+      background-size: 100% 3px, 6px 100%;
+      pointer-events: none;
+      animation: flicker 0.15s infinite;
+    }
+
+    @keyframes flicker {
+      0% { opacity: 0.97; }
+      50% { opacity: 1; }
+      100% { opacity: 0.98; }
+    }
+
+    .terminal {
+      width: 100%;
+      max-width: 680px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 0 35px var(--glow);
+      overflow: hidden;
+      position: relative;
+      z-index: 10;
+      animation: pulseGlow 4s infinite alternate ease-in-out, glitchContainer 8s infinite;
+    }
+
+    @keyframes pulseGlow {
+      0% { box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 0 20px rgba(88, 166, 255, 0.2); }
+      100% { box-shadow: 0 20px 50px rgba(0,0,0,0.9), 0 0 45px rgba(88, 166, 255, 0.45); }
+    }
+
+    /* Glitch Animation on Terminal Box */
+    @keyframes glitchContainer {
+      0%, 95%, 100% { transform: translate(0, 0); }
+      96% { transform: translate(-3px, 2px); filter: hue-rotate(90deg); }
+      97% { transform: translate(3px, -1px); filter: hue-rotate(-90deg); }
+      98% { transform: translate(-1px, -2px); }
+    }
+
+    .header {
+      background: #1c212d;
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .dot { width: 12px; height: 12px; border-radius: 50%; }
+    .dot-1 { background: #ff5f56; }
+    .dot-2 { background: #ffbd2e; }
+    .dot-3 { background: #27c93f; }
+
+    .title {
+      font-size: 0.8rem;
+      color: #8b949e;
+      margin-left: auto;
+    }
+
+    .start-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 70px 20px;
+      gap: 15px;
+    }
+
+    .start-hint {
+      font-size: 0.85rem;
+      color: #8b949e;
+    }
+
+    .loader-container {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      gap: 20px;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(88, 166, 255, 0.15);
+      border-top: 3px solid var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .progress-bar-wrap {
+      width: 100%;
+      max-width: 320px;
+      height: 6px;
+      background: #1c212d;
+      border-radius: 3px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+    }
+
+    .loading-text {
+      font-size: 0.85rem;
+      color: #8b949e;
+    }
+
+    .content {
+      padding: 30px;
+      line-height: 1.7;
+      font-size: 0.95rem;
+      display: none;
+    }
+
+    .line {
+      margin-bottom: 12px;
+      position: relative;
+    }
+
+    .green { color: var(--green); font-weight: bold; text-shadow: 0 0 5px var(--green); }
+    .accent { color: var(--accent); font-weight: bold; }
+    .question { color: var(--cyan); font-weight: bold; text-shadow: 0 0 8px var(--cyan); }
+
+    /* Glitch Text Effect */
+    .glitch-text {
+      position: relative;
+      display: inline-block;
+    }
+
+    .glitch-text::before,
+    .glitch-text::after {
+      content: attr(data-text);
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      clip: rect(0, 0, 0, 0);
+    }
+
+    .glitch-text::before {
+      left: -2px;
+      text-shadow: 2px 0 var(--magenta);
+      animation: glitch-anim-1 2s infinite linear alternate-reverse;
+    }
+
+    .glitch-text::after {
+      left: 2px;
+      text-shadow: -2px 0 var(--cyan);
+      animation: glitch-anim-2 3s infinite linear alternate-reverse;
+    }
+
+    @keyframes glitch-anim-Вот полный код файла `index.html` со всеми глитч-эффектами, CRT-сканлайнами и строчкой с вопросом:
+
+```html
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>system_init.sh</title>
+  <style>
+    :root {
+      --bg: #090c10;
+      --card-bg: #131720;
+      --border: #2d3548;
+      --text: #c9d1d9;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --pink: #ff79c6;
+      --glow: rgba(88, 166, 255, 0.3);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Courier New', Courier, monospace;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Эффект сканирующих полос CRT */
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.35) 50%), 
+                  linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+      background-size: 100% 3px, 6px 100%;
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    /* Легкая вибрация/дрожание CRT экрана */
+    .crt-screen {
+      width: 100%;
+      max-width: 680px;
+      position: relative;
+      animation: crtFlicker 0.15s infinite;
+    }
+
+    @keyframes crtFlicker {
+      0% { opacity: 0.99; }
+      50% { opacity: 1; }
+      100% { opacity: 0.98; }
+    }
+
+    .terminal {
+      width: 100%;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 0 35px var(--glow);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .header {
+      background: #1c212c;
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .dot { width: 12px; height: 12px; border-radius: 50%; }
+    .dot-1 { background: #ff5f56; }
+    .dot-2 { background: #ffbd2e; }
+    .dot-3 { background: #27c93f; }
+
+    .title {
+      font-size: 0.8rem;
+      color: #8b949e;
+      margin-left: auto;
+    }
+
+    .start-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 70px 20px;
+      gap: 15px;
+    }
+
+    .start-hint {
+      font-size: 0.85rem;
+      color: #8b949e;
+    }
+
+    .loader-container {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      gap: 20px;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(88, 166, 255, 0.15);
+      border-top: 3px solid var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .progress-bar-wrap {
+      width: 100%;
+      max-width: 320px;
+      height: 6px;
+      background: #1c212c;
+      border-radius: 3px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent);
+    }
+
+    .loading-text {
+      font-size: 0.85rem;
+      color: #8b949e;
+    }
+
+    .content {
+      padding: 30px;
+      line-height: 1.7;
+      font-size: 0.95rem;
+      display: none;
+    }
+
+    .line {
+      margin-bottom: 12px;
+      position: relative;
+    }
+
+    /* Эффект глитча при появлении строк */
+    .glitch-text {
+      animation: glitchAnim 0.3s ease-in-out;
+    }
+
+    @keyframes glitchAnim {
+      0% { transform: translate(0); }
+      20% { transform: translate(-2px, 2px); text-shadow: 2px 0 #ff0055, -2px 0 #00ffff; }
+      40% { transform: translate(-1px, -1px); text-shadow: -2px 0 #ff0055, 2px 0 #00ffff; }
+      60% { transform: translate(2px, 1px); }
+      100% { transform: translate(0); text-shadow: none; }
+    }
+
+    .green { color: var(--green); font-weight: bold; }
+    .accent { color: var(--accent); font-weight: bold; }
+    .pink { color: var(--pink); font-weight: bold; }
+
+    .cursor {
+      display: inline-block;
+      width: 8px;
+      height: 1em;
+      background-color: var(--accent);
+      vertical-align: middle;
+      margin-left: 4px;
+      animation: blink 0.8s infinite;
+      box-shadow: 0 0 8px var(--accent);
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    .prompt {
+      margin-top: 25px;
+      border-top: 1px dashed var(--border);
+      padding-top: 20px;
+      display: none;
+    }
+
+    .btns {
+      display: flex;
+      gap: 15px;
+      margin-top: 18px;
+    }
+
+    button {
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      padding: 10px 24px;
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+
+    button:hover {
+      background: var(--accent);
+      color: var(--bg);
+      box-shadow: 0 0 15px var(--glow);
+    }
+
+    .btn-no {
+      border-color: #484f58;
+      color: #8b949e;
+    }
+
+    .btn-no:hover {
+      background: #30363d;
+      color: var(--text);
+      box-shadow: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="crt-screen">
+    <div class="terminal">
+      <div class="header">
+        <div class="dot dot-1"></div>
+        <div class="dot dot-2"></div>
+        <div class="dot dot-3"></div>
+        <span class="title">bash - 80x24</span>
+      </div>
+
+      <!-- Экран старта -->
+      <div class="start-container" id="startContainer">
+        <div class="start-hint">Incoming execution request...</div>
+        <button id="startBtn">./run_script.sh</button>
+      </div>
+
+      <!-- Загрузка -->
+      <div class="loader-container" id="loader">
+        <div class="spinner"></div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="loading-text" id="loadStatus">LOADING SYSTEM MODULES... 0%</div>
+      </div>
+
+      <!-- Контент -->
+      <div class="content" id="terminalContent">
+        <div id="log-lines"></div>
+        
+        <div class="prompt" id="prompt-box">
+          <div>Execute action: <strong style="color: #fff;">START_RELATIONSHIP?</strong> [Y/N]</div>
+          <div class="btns">
+            <button id="yesBtn">[ Y ] Давай!</button>
+            <button class="btn-no" id="noBtn">[ N ] Нет</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const startContainer = document.getElementById('startContainer');
+    const startBtn = document.getElementById('startBtn');
+    const loader = document.getElementById('loader');
+    const progressBar = document.getElementById('progressBar');
+    const loadStatus = document.getElementById('loadStatus');
+    const terminalContent = document.getElementById('terminalContent');
+    const logLines = document.getElementById('log-lines');
+    const promptBox = document.getElementById('prompt-box');
+    const yesBtn = document.getElementById('yesBtn');
+    const noBtn = document.getElementById('noBtn');
+
+    const linesData = [
+      { prefix: '[<span class="green">OK</span>]', text: ' System initialized.' },
+      { prefix: '[<span class="green">OK</span>]', text: ' Secure connection established.' },
+      { prefix: '[<span class="accent">INFO</span>]', text: ' Выговорить это вслух для меня слишком сложно — язык сразу заплетается.' },
+      { prefix: '[<span class="accent">INFO</span>]', text: ' А писать длинные сообщения в ЛС было слишком страшно.' },
+      { prefix: '[<span class="accent">INFO</span>]', text: ' Мне правда очень хорошо и уютно с тобой.' },
+      { prefix: '[<span class="accent">INFO</span>]', text: ' Поэтому я собрала этот сайт, чтобы спросить напрямую...' },
+      { prefix: '[<span class="pink">QUESTION</span>]', text: ' Ты будешь моей девушкой?' }
+    ];
+
+    let currentLineIndex = 0;
+    const cursor = document.createElement('span');
+    cursor.className = 'cursor';
+
+    startBtn.addEventListener('click', () => {
+      startContainer.style.display = 'none';
+      loader.style.display = 'flex';
+      
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += 10;
+        if (progress > 100) progress = 100;
+        progressBar.style.width = progress + '%';
+        loadStatus.textContent = 'LOADING SYSTEM MODULES... ' + progress + '%';
+
+        if (progress === 100) {
+          clearInterval(interval);
+          setTimeout(() => {
+            loader.style.display = 'none';
+            terminalContent.style.display = 'block';
+            printNextLine();
+          }, 300);
+        }
+      }, 80);
+    });
+
+    function printNextLine() {
+      if (currentLineIndex < linesData.length) {
+        const item = linesData[currentLineIndex];
+        const div = document.createElement('div');
+        div.className = 'line glitch-text';
+        div.innerHTML = item.prefix + ' ';
+        
+        const textSpan = document.createElement('span');
+        div.appendChild(textSpan);
+        div.appendChild(cursor);
+        logLines.appendChild(div);
+
+        let charIdx = 0;
+        const text = item.text;
+        const timer = setInterval(() => {
+          if (charIdx < text.length) {
+            textSpan.textContent += text[charIdx];
+            charIdx++;
+          } else {
+            clearInterval(timer);
+            currentLineIndex++;
+            setTimeout(printNextLine, 250);
+          }
+        }, 30);
+      } else {
+        cursor.remove();
+        promptBox.style.display = 'block';
+      }
+    }
+
+    yesBtn.addEventListener('click', () => {
+      promptBox.style.display = 'none';
+      const div = document.createElement('div');
+      div.className = 'line glitch-text';
+      div.innerHTML = '<br><div>[<span class="green">SUCCESS</span>] Status updated: IN_RELATIONSHIP = true</div><div>[<span class="green">OK</span>] Отлично! Напиши мне в лс или жди сообщения, всё обсудим 🚀🤍</div>';
+      logLines.appendChild(div);
+    });
+
+    noBtn.addEventListener('click', () => {
+      promptBox.style.display = 'none';
+      const div = document.createElement('div');
+      div.className = 'line glitch-text';
+      div.innerHTML = '<br><div>[<span class="accent">INFO</span>] Process terminated by user.</div><div>Принято, без проблем. Главное было сказать честно! Остаёмся на связи.</div>';
+      logLines.appendChild(div);
+    });
+  </script>
+</body>
+</html>
